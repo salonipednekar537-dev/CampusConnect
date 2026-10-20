@@ -1,0 +1,11 @@
+
+.venv/
+venv/
+venv-1/
+venv2/
+__pycache__/
+.pytest_cache/
+*.py[cod]
+campusconnect.db
+.env
+
