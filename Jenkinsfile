@@ -11,13 +11,13 @@ pipeline {
 
         stage('Install Dependencies') {
             steps {
-                bat 'python -m pip install -r requirements.txt'
+                bat '"C:\Users\SALONI PEDNEKAR\AppData\Local\Programs\Python\Python312\python.exe"
             }
         }
 
         stage('Run Tests') {
             steps {
-                bat 'python -m pytest -v'
+                bat '"C:\\Users\\SALONI PEDNEKAR\\AppData\\Local\\Programs\\Python\\Python312\\python.exe" -m pytest -v'
             }
         }
     }
@@ -31,4 +31,3 @@ pipeline {
         }
     }
 }
-
