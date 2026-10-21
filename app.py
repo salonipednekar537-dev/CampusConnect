@@ -1,48 +1,71 @@
 
+import sqlite3
 from flask import Flask, render_template, request, redirect, url_for
 
 app = Flask(__name__)
+DATABASE = "campusconnect.db"
 
-events = [
-    {
-        "id": 1,
-        "name": "TechFest 2026",
-        "category": "Technology",
-        "date": "2026-11-15",
-        "venue": "Main Auditorium",
-        "description": "A day of coding, innovation and technology.",
-        "capacity": 100,
-        "registrations": 0
-    },
-    {
-        "id": 2,
-        "name": "Cultural Night",
-        "category": "Cultural",
-        "date": "2026-11-20",
-        "venue": "College Ground",
-        "description": "Celebrate music, dance and college life.",
-        "capacity": 150,
-        "registrations": 0
-    }
-]
 
-next_id = 3
+def get_db():
+    connection = sqlite3.connect(DATABASE)
+    connection.row_factory = sqlite3.Row
+    return connection
+
+
+def init_db():
+    with get_db() as db:
+        db.execute("""
+            CREATE TABLE IF NOT EXISTS events (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL,
+                category TEXT NOT NULL,
+                date TEXT NOT NULL,
+                venue TEXT NOT NULL,
+                description TEXT DEFAULT '',
+                capacity INTEGER NOT NULL CHECK (capacity > 0),
+                registrations INTEGER NOT NULL DEFAULT 0
+            )
+        """)
+
+        count = db.execute(
+            "SELECT COUNT(*) FROM events"
+        ).fetchone()[0]
+
+        if count == 0:
+            db.executemany("""
+                INSERT INTO events
+                (name, category, date, venue, description, capacity)
+                VALUES (?, ?, ?, ?, ?, ?)
+            """, [
+                ("TechFest 2026", "Technology", "2026-11-15",
+                 "Main Auditorium",
+                 "A day of coding, innovation and technology.", 100),
+                ("Cultural Night", "Cultural", "2026-11-20",
+                 "College Ground",
+                 "Celebrate music, dance and college life.", 150)
+            ])
 
 
 @app.route("/")
 def home():
-    query = request.args.get("q", "").strip().lower()
+    query = request.args.get("q", "").strip()
     category = request.args.get("category", "").strip()
 
-    filtered_events = [
-        event for event in events
-        if query in event["name"].lower()
-        and (not category or event["category"] == category)
-    ]
+    sql = "SELECT * FROM events WHERE name LIKE ?"
+    params = [f"%{query}%"]
+
+    if category:
+        sql += " AND category = ?"
+        params.append(category)
+
+    with get_db() as db:
+        events = db.execute(
+            sql + " ORDER BY date ASC", params
+        ).fetchall()
 
     return render_template(
         "index.html",
-        events=filtered_events,
+        events=events,
         query=query,
         category=category
     )
@@ -50,8 +73,6 @@ def home():
 
 @app.route("/add", methods=["POST"])
 def add_event():
-    global next_id
-
     name = request.form.get("name", "").strip()
     category = request.form.get("category", "").strip()
     date = request.form.get("date", "").strip()
@@ -69,52 +90,52 @@ def add_event():
     except ValueError:
         return "Capacity must be a positive number.", 400
 
-    events.append({
-        "id": next_id,
-        "name": name,
-        "category": category,
-        "date": date,
-        "venue": venue,
-        "description": description,
-        "capacity": capacity,
-        "registrations": 0
-    })
+    with get_db() as db:
+        db.execute("""
+            INSERT INTO events
+            (name, category, date, venue, description, capacity)
+            VALUES (?, ?, ?, ?, ?, ?)
+        """, (name, category, date, venue, description, capacity))
 
-    next_id += 1
     return redirect(url_for("home"))
 
 
 @app.route("/register/<int:event_id>", methods=["POST"])
 def register(event_id):
-    event = next(
-        (item for item in events if item["id"] == event_id),
-        None
-    )
+    with get_db() as db:
+        cursor = db.execute("""
+            UPDATE events
+            SET registrations = registrations + 1
+            WHERE id = ? AND registrations < capacity
+        """, (event_id,))
 
-    if event is None:
-        return "Event not found.", 404
+        if cursor.rowcount == 0:
+            exists = db.execute(
+                "SELECT id FROM events WHERE id = ?", (event_id,)
+            ).fetchone()
 
-    if event["registrations"] >= event["capacity"]:
-        return "This event is full.", 400
+            if exists is None:
+                return "Event not found.", 404
 
-    event["registrations"] += 1
+            return "This event is full.", 400
+
     return redirect(url_for("home"))
 
 
 @app.route("/delete/<int:event_id>", methods=["POST"])
 def delete_event(event_id):
-    global events
+    with get_db() as db:
+        cursor = db.execute(
+            "DELETE FROM events WHERE id = ?", (event_id,)
+        )
 
-    if not any(event["id"] == event_id for event in events):
-        return "Event not found.", 404
-
-    events = [
-        event for event in events
-        if event["id"] != event_id
-    ]
+        if cursor.rowcount == 0:
+            return "Event not found.", 404
 
     return redirect(url_for("home"))
 
+
+init_db()
 
 if __name__ == "__main__":
     app.run(debug=True)
